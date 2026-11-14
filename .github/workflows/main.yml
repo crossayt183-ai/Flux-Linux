@@ -1,0 +1,59 @@
+name: Build FluxOS 0.4 x86_64 Bootable ISO & USB Image
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-fluxos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FluxOS 0.4 Source Code
+        uses: actions/checkout@v4
+
+      - name: Install ISO & Image Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorriso mtools zip
+
+      - name: Build Bootable UEFI ISO (FluxOS-0.4-x86_64.iso)
+        run: |
+          mkdir -p iso_root/EFI/BOOT iso_root/boot
+          cp build/esp/EFI/BOOT/BOOTX64.EFI iso_root/EFI/BOOT/BOOTX64.EFI
+          cp build/esp/boot/fluxos.elf iso_root/boot/fluxos.elf
+          cp build/esp/boot/limine.conf iso_root/boot/limine.conf
+          cp build/disk.img iso_root/boot/disk.img
+
+          # Create FAT16 UEFI ESP image for El Torito EFI boot
+          dd if=/dev/zero of=iso_root/boot/efi.img bs=1M count=8
+          mkfs.vfat -F 16 iso_root/boot/efi.img
+          mmd -i iso_root/boot/efi.img ::/EFI ::/EFI/BOOT ::/boot
+          mcopy -i iso_root/boot/efi.img build/esp/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
+          mcopy -i iso_root/boot/efi.img build/esp/boot/fluxos.elf ::/boot/fluxos.elf
+          mcopy -i iso_root/boot/efi.img build/esp/boot/limine.conf ::/boot/limine.conf
+
+          xorriso -as mkisofs \
+            -R -r -J -joliet-long \
+            -V "FLUXOS_0_4_X86_64" \
+            -eltorito-alt-boot \
+            -e boot/efi.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            iso_root -o FluxOS-0.4-x86_64.iso
+
+          ls -lh FluxOS-0.4-x86_64.iso build/fluxos-v0.4-x86_64.img build/fluxos-v0.4-x86_64-release.zip
+
+      - name: Upload Bootable ISO & USB Image to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FluxOS-0.4-x86_64-ISO-and-USB
+          path: |
+            FluxOS-0.4-x86_64.iso
+            build/fluxos-v0.4-x86_64.img
+            build/fluxos-v0.4-x86_64-release.zip
+            build/fluxos.elf
+            build/disk.img
