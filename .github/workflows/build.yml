@@ -1,0 +1,33 @@
+name: Build FluxOS x86_64 Release
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-fluxos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FluxOS repository
+        uses: actions/checkout@v4
+
+      - name: Setup Zig Compiler
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Package FluxOS Release Archive
+        run: |
+          zip -r fluxos-v0.4-x86_64-bundle.zip build/esp build/fluxos.elf build/disk.img build/fluxos-v0.4-x86_64.img src/ user/ tools/ limine.conf linker.ld
+
+      - name: Upload FluxOS Bootable Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FluxOS-v0.4-x86_64-Bootable
+          path: |
+            fluxos-v0.4-x86_64-bundle.zip
+            build/fluxos-v0.4-x86_64-release.zip
+            build/fluxos-v0.4-x86_64.img
+            build/fluxos.elf
+            build/disk.img

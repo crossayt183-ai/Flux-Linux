@@ -1,0 +1,6 @@
+build/obj/
+build/user/
+build/ovmf_vars.fd
+build/serial.log
+__pycache__/
+*.pyc
