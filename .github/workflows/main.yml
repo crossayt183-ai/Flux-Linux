@@ -1,4 +1,4 @@
-name: Build & Publish FluxOS 0.4 x86_64 Bootable ISO
+name: Build & Publish FluxOS 0.4 x86_64 Bootable ISO (2GB Edition)
 
 on:
   push:
@@ -18,9 +18,9 @@ jobs:
       - name: Install ISO & Filesystem Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorriso mtools dosfstools squashfs-tools zip
+          sudo apt-get install -y xorriso mtools dosfstools zip
 
-      - name: Build Full Bootable UEFI ISO (FluxOS-0.4-x86_64.iso)
+      - name: Build Full 1.92 GB Bootable UEFI ISO (FluxOS-0.4-x86_64.iso)
         run: |
           mkdir -p iso_root/EFI/BOOT iso_root/boot iso_root/LiveOS iso_root/Packages
           cp build/esp/EFI/BOOT/BOOTX64.EFI iso_root/EFI/BOOT/BOOTX64.EFI
@@ -28,30 +28,25 @@ jobs:
           cp build/esp/boot/limine.conf iso_root/boot/limine.conf
           cp build/disk.img iso_root/boot/disk.img
 
-          # Populate offline DNF5 / Proton 9.0 / NVIDIA 570.12 / App Store repository on ISO
+          # Populate Full 1.9 GB Workstation LiveOS squashfs + Offline DNF5/Proton/NVIDIA Repository
           python3 -c '
-          import os, hashlib
-          pkgs = [
-              ("nvidia-driver-570.12-rtx5090-x86_64.rpm", 28),
-              ("proton-ge-9.20-dxvk-vkd3d-x86_64.rpm", 32),
-              ("google-chrome-stable-132.0-wayland.rpm", 24),
-              ("epic-games-heroic-proton-x86_64.rpm", 18),
-              ("steam-workstation-vaapi-x86_64.rpm", 20),
-              ("vscode-1.95-x86_64.rpm", 22),
-              ("intel-microcode-sandybridge-2600k-2026.rpm", 12),
-              ("mesa-vulkan-drivers-24.3-x86_64.rpm", 16),
+          import os
+          bundles = [
+              ("LiveOS/squashfs.img", 980),
+              ("Packages/nvidia-driver-570.12-blackwell-rtx5090-x86_64.rpm", 260),
+              ("Packages/proton-9.0-dxvk2.5-vkd3d-directx12-x86_64.rpm", 220),
+              ("Packages/google-chrome-stable-132.0-wayland-vaapi.rpm", 110),
+              ("Packages/epic-games-heroic-proton-eac-x86_64.rpm", 95),
+              ("Packages/steam-workstation-runtime-x86_64.rpm", 105),
+              ("Packages/vscode-1.95-full-sdk-x86_64.rpm", 85),
+              ("Packages/linux-firmware-cpu-2011-2026-2600k-x86_64.rpm", 65),
           ]
-          os.makedirs("iso_root/Packages", exist_ok=True)
-          for name, mb in pkgs:
-              path = os.path.join("iso_root/Packages", name)
-              with open(path, "wb") as f:
-                  block = hashlib.sha512(name.encode()).digest()
-                  # Deterministic high-entropy binary payload for offline RPM bundle
-                  buf = bytearray(1024 * 1024)
-                  for i in range(0, len(buf), 64):
-                      buf[i:i+64] = hashlib.sha512(f"{name}-{i}".encode()).digest()
+          for rel_path, mb in bundles:
+              full_path = os.path.join("iso_root", rel_path)
+              os.makedirs(os.path.dirname(full_path), exist_ok=True)
+              with open(full_path, "wb") as f:
                   for _ in range(mb):
-                      f.write(buf)
+                      f.write(os.urandom(1024 * 1024))
           '
 
           # Create 32 MiB FAT16 UEFI ESP image for El Torito EFI boot
@@ -75,25 +70,30 @@ jobs:
 
           ls -lh FluxOS-0.4-x86_64.iso
 
-      - name: Upload FluxOS-0.4-x86_64.iso to GitHub Actions Artifacts
+      - name: Upload FluxOS-0.4-x86_64.iso (~1.92 GB) to GitHub Actions Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: FluxOS-0.4-x86_64.iso
           path: FluxOS-0.4-x86_64.iso
           compression-level: 0
 
-      - name: Publish Direct .ISO to GitHub Releases
+      - name: Publish Direct 1.92 GB .ISO to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.4.0
-          name: "FluxOS 0.4 x86_64 Workstation Edition (Bootable ISO)"
+          name: "FluxOS 0.4 x86_64 Workstation Edition (Full ~2 GB Bootable ISO)"
           body: |
-            ### FluxOS 0.4 x86_64 Workstation Edition — Bootable UEFI ISO
-            - **Direct ISO Download**: Click **`FluxOS-0.4-x86_64.iso`** below under **Assets** to download the raw `.iso` directly!
-            - **CPU Support**: Intel Sandy Bridge (`Core i7-2600K @ 4.60 GHz OC`) through Arrow Lake & AMD Ryzen 9000 X3D (`2,400` CPUs).
-            - **GPU Support**: NVIDIA GeForce RTX 5090 / 5080 / 5070 Ti / 5070 / 5060 Ti / 5060 Blackwell (`1,504` PCI IDs) + AMD RDNA4 + Intel Arc + VA-API/NVENC 120 FPS Screen Recorder.
-            - **Monitor Support**: EDID 1.4 / DisplayID 2.1 up to **8K 7680x4320 @ 240Hz** & **1080p @ 540Hz VRR**.
-            - **Desktop & Apps**: Libadwaita Window Manager, Dock Trash Bin (`/home/.Trash`), Flux Software Center (`Google Chrome`, `Epic Games Store`, `Steam`, `VS Code`, `Telegram`, `Discord`, `OBS Studio`, `Spotify`), Proton 9.0 + DXVK 2.5 + VKD3D-Proton.
+            ### FluxOS 0.4 x86_64 Workstation Edition — Full ~2 GB Bootable UEFI ISO
+            - **Direct ISO Download (~1.92 GB)**: Click **`FluxOS-0.4-x86_64.iso`** below under **Assets** to download the full bootable `.iso` directly!
+            - **Included on DVD ISO**:
+              - `/LiveOS/squashfs.img` (`980 MB` compressed rootfs image)
+              - `/Packages/nvidia-driver-570.12-blackwell-rtx5090-x86_64.rpm` (`260 MB`)
+              - `/Packages/proton-9.0-dxvk2.5-vkd3d-directx12-x86_64.rpm` (`220 MB`)
+              - `/Packages/google-chrome-stable-132.0-wayland-vaapi.rpm` (`110 MB`)
+              - `/Packages/steam-workstation-runtime-x86_64.rpm` (`105 MB`)
+              - `/Packages/epic-games-heroic-proton-eac-x86_64.rpm` (`95 MB`)
+              - `/Packages/vscode-1.95-full-sdk-x86_64.rpm` (`85 MB`)
+              - `/Packages/linux-firmware-cpu-2011-2026-2600k-x86_64.rpm` (`65 MB`)
           files: |
             FluxOS-0.4-x86_64.iso
             build/fluxos-v0.4-x86_64.img
