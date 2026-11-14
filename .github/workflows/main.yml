@@ -18,7 +18,7 @@ jobs:
       - name: Install ISO & Image Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorriso mtools zip
+          sudo apt-get install -y xorriso mtools dosfstools zip
 
       - name: Build Bootable UEFI ISO (FluxOS-0.4-x86_64.iso)
         run: |
@@ -28,8 +28,8 @@ jobs:
           cp build/esp/boot/limine.conf iso_root/boot/limine.conf
           cp build/disk.img iso_root/boot/disk.img
 
-          # Create FAT16 UEFI ESP image for El Torito EFI boot
-          dd if=/dev/zero of=iso_root/boot/efi.img bs=1M count=8
+          # Create 32 MiB FAT16 UEFI ESP image for El Torito EFI boot
+          dd if=/dev/zero of=iso_root/boot/efi.img bs=1M count=32
           mkfs.vfat -F 16 iso_root/boot/efi.img
           mmd -i iso_root/boot/efi.img ::/EFI ::/EFI/BOOT ::/boot
           mcopy -i iso_root/boot/efi.img build/esp/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
@@ -39,6 +39,8 @@ jobs:
           xorriso -as mkisofs \
             -R -r -J -joliet-long \
             -V "FLUXOS_0_4_X86_64" \
+            -b boot/efi.img \
+            -no-emul-boot \
             -eltorito-alt-boot \
             -e boot/efi.img \
             -no-emul-boot \
