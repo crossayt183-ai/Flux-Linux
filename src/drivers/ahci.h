@@ -6,6 +6,8 @@
 #define AHCI_SECTOR_SIZE 512
 
 bool        ahci_init(void);
+void        ahci_attach_ramdisk(void *base, uint64_t size_bytes);
+void        ahci_enable_ramdisk_fallback(bool enable);
 bool        ahci_is_ready(void);
 int         ahci_drive_count(void);
 bool        ahci_select_drive(int idx);

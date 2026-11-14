@@ -164,6 +164,7 @@ def build():
     if res.returncode != 0:
         print(f"[DISK FAIL]:\n{res.stderr}")
         sys.exit(1)
+    shutil.copy2(disk_img, boot_dir / "disk.img")
 
     total_loc = sum(len(f.read_text(encoding="utf-8", errors="ignore").splitlines())
                     for f in [*c_files, *s_files, *sorted(SRC.rglob("*.h"))])

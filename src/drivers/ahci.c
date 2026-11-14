@@ -290,7 +290,31 @@ bool ahci_init(void) {
     return false;
 }
 
-bool ahci_is_ready(void) { return cur_drive >= 0 && cur_drive < num_drives; }
+static uint8_t *ramdisk_base    = NULL;
+static uint64_t ramdisk_sectors = 0;
+static bool     use_ramdisk     = false;
+
+void ahci_attach_ramdisk(void *base, uint64_t size_bytes) {
+    ramdisk_base    = (uint8_t *)base;
+    ramdisk_sectors = size_bytes / AHCI_SECTOR_SIZE;
+    kprintf("[RAMDISK] Attached Limine ISO module @ %p (%lu KB, %lu sectors)\n",
+            base, (unsigned long)(size_bytes / 1024), (unsigned long)ramdisk_sectors);
+}
+
+void ahci_enable_ramdisk_fallback(bool enable) {
+    if (enable && ramdisk_base && ramdisk_sectors > 0) {
+        use_ramdisk = true;
+        kprintf("[RAMDISK] Activated in-memory ext2 rootfs fallback (%lu sectors)\n",
+                (unsigned long)ramdisk_sectors);
+    } else {
+        use_ramdisk = false;
+    }
+}
+
+bool ahci_is_ready(void) {
+    if (use_ramdisk && ramdisk_base && ramdisk_sectors > 0) return true;
+    return cur_drive >= 0 && cur_drive < num_drives;
+}
 int ahci_drive_count(void) { return num_drives; }
 
 bool ahci_select_drive(int idx) {
@@ -300,15 +324,23 @@ bool ahci_select_drive(int idx) {
 }
 
 uint64_t ahci_sector_count(void) {
-    return ahci_is_ready() ? drives[cur_drive].total_sectors : 0;
+    if (use_ramdisk && ramdisk_base) return ramdisk_sectors;
+    return (cur_drive >= 0 && cur_drive < num_drives) ? drives[cur_drive].total_sectors : 0;
 }
 
 const char *ahci_model(void) {
-    return ahci_is_ready() ? drives[cur_drive].model : "none";
+    if (use_ramdisk && ramdisk_base) return "Limine ISO LiveRAMDisk";
+    return (cur_drive >= 0 && cur_drive < num_drives) ? drives[cur_drive].model : "none";
 }
 
 int ahci_read_sectors(uint64_t lba, uint32_t count, void *buf) {
-    if (!ahci_is_ready() || !buf || count == 0) return -1;
+    if (!buf || count == 0) return -1;
+    if (use_ramdisk && ramdisk_base) {
+        if (lba + count > ramdisk_sectors) return -1;
+        memcpy(buf, ramdisk_base + lba * AHCI_SECTOR_SIZE, (size_t)count * AHCI_SECTOR_SIZE);
+        return 0;
+    }
+    if (cur_drive < 0 || cur_drive >= num_drives) return -1;
     ahci_drive_t *d = &drives[cur_drive];
     if (lba + count > d->total_sectors) return -1;
 
@@ -333,7 +365,13 @@ int ahci_read_sectors(uint64_t lba, uint32_t count, void *buf) {
 }
 
 int ahci_write_sectors(uint64_t lba, uint32_t count, const void *buf) {
-    if (!ahci_is_ready() || !buf || count == 0) return -1;
+    if (!buf || count == 0) return -1;
+    if (use_ramdisk && ramdisk_base) {
+        if (lba + count > ramdisk_sectors) return -1;
+        memcpy(ramdisk_base + lba * AHCI_SECTOR_SIZE, buf, (size_t)count * AHCI_SECTOR_SIZE);
+        return 0;
+    }
+    if (cur_drive < 0 || cur_drive >= num_drives) return -1;
     ahci_drive_t *d = &drives[cur_drive];
     if (lba + count > d->total_sectors) return -1;
 
