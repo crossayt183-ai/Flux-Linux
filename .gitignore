@@ -2,5 +2,6 @@ build/obj/
 build/user/
 build/ovmf_vars.fd
 build/serial.log
+build/*.iso
 __pycache__/
 *.pyc

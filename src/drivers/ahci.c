@@ -315,9 +315,15 @@ bool ahci_is_ready(void) {
     if (use_ramdisk && ramdisk_base && ramdisk_sectors > 0) return true;
     return cur_drive >= 0 && cur_drive < num_drives;
 }
-int ahci_drive_count(void) { return num_drives; }
+int ahci_drive_count(void) {
+    if (use_ramdisk && ramdisk_base && ramdisk_sectors > 0) return 1;
+    return num_drives;
+}
 
 bool ahci_select_drive(int idx) {
+    if (use_ramdisk && ramdisk_base && ramdisk_sectors > 0) {
+        return idx == 0;
+    }
     if (idx < 0 || idx >= num_drives) return false;
     cur_drive = idx;
     return true;

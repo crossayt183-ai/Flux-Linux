@@ -1237,9 +1237,9 @@ static void settings_paint(wm_window_t *win UNUSED, int32_t cx, int32_t cy, int3
 
     screenshot_info_t sh;
     if (get_last_screenshot(&sh)) {
-        char sbuf[72];
-        ksnprintf(sbuf, sizeof(sbuf), "Saved: %s", sh.saved_path);
-        font_draw_str(cx + 250, cy + 107, sbuf, 0x57E389, 0, true);
+        char sbuf[32];
+        ksnprintf(sbuf, sizeof(sbuf), "Saved (%ux%u)", sh.width, sh.height);
+        font_draw_str(cx + 252, cy + 107, sbuf, 0x57E389, 0, true);
     }
 
     fb_draw_line(cx + 16, cy + 136, cx + cw - 16, cy + 136, 0x2B303D);
@@ -1264,9 +1264,9 @@ static void settings_paint(wm_window_t *win UNUSED, int32_t cx, int32_t cy, int3
 
     screen_record_info_t ri;
     if (get_last_recording(&ri)) {
-        char rbuf[72];
-        ksnprintf(rbuf, sizeof(rbuf), "Saved: %s (%uFPS)", ri.saved_path, ri.fps);
-        font_draw_str(cx + 250, cy + 241, rbuf, 0xFCA5A5, 0, true);
+        char rbuf[32];
+        ksnprintf(rbuf, sizeof(rbuf), "Clip #%u (%uFPS OK)", ri.clip_id, ri.fps);
+        font_draw_str(cx + 252, cy + 241, rbuf, 0xFCA5A5, 0, true);
     }
 
     fb_draw_line(cx + 16, cy + 270, cx + cw - 16, cy + 270, 0x2B303D);
@@ -1318,14 +1318,14 @@ typedef struct {
 } store_app_card_t;
 
 static const store_app_card_t store_cards[8] = {
-    { "google-chrome",    "Google Chrome 132",  "Web Browser (Wayland VA-API)", 0xEA580C },
-    { "epic-games",       "Epic Games Store",   "Heroic + Proton 9.0 + EAC",    0x9333EA },
-    { "steam",            "Steam Gaming",       "DXVK 2.5 + VKD3D DX12 Ult",    0x2563EB },
-    { "vscode",           "VS Code IDE",        "C/C++, Rust, Python, Git",     0x0284C7 },
-    { "telegram-desktop", "Telegram Desktop",   "Fast Encrypted Messenger",     0x38BDF8 },
-    { "discord",          "Discord Voice",      "Wayland ScreenShare + NVENC",  0x6366F1 },
-    { "obs-studio",       "OBS Studio 31",      "NVENC / QuickSync 120FPS",     0x10B981 },
-    { "spotify",          "Spotify Music",      "PipeWire Lossless Audio",      0x22C55E }
+    { "google-chrome",    "Google Chrome",   "Wayland VA-API", 0xEA580C },
+    { "epic-games",       "Epic Games",      "Heroic + Proton", 0x9333EA },
+    { "steam",            "Steam Gaming",    "DXVK + VKD3D",    0x2563EB },
+    { "vscode",           "VS Code IDE",     "C/Python/Git",    0x0284C7 },
+    { "telegram-desktop", "Telegram",        "Desktop Client",  0x38BDF8 },
+    { "discord",          "Discord Voice",   "NVENC Share",     0x6366F1 },
+    { "obs-studio",       "OBS Studio 31",   "120FPS Recorder", 0x10B981 },
+    { "spotify",          "Spotify Music",   "PipeWire Audio",  0x22C55E }
 };
 
 static bool store_installed[8] = { true, true, true, true, false, false, false, false };
@@ -1737,6 +1737,9 @@ static void wm_compose_frame(mouse_state_t ms) {
         font_draw_str(qx + 182, qy + 170, "PowerOff", 0xFCA5A5, 0, true);
     }
 
+    if (night_light_on) {
+        fb_fill_rect_alpha(0, 0, sw, sh, 0xFF9436, 26);
+    }
     draw_cursor(ms.x, ms.y);
     fb_present();
 }
@@ -1815,7 +1818,9 @@ static void handle_mouse_event(mouse_state_t ms) {
                 } else if (rx < 172) {
                     outb(0x64, 0xFE);
                 } else {
-                    outw(0x604, 0x2000);
+                    outw(0x604, 0x2000);  /* QEMU Q35/i440FX ACPI poweroff */
+                    outw(0x4004, 0x3400); /* VirtualBox PIIX4 ACPI poweroff */
+                    outw(0xB004, 0x2000); /* Bochs/older QEMU poweroff */
                 }
             }
             wm_dirty = true;

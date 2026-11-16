@@ -37,9 +37,25 @@ jobs:
           cp limine.conf iso_root/limine.conf
           cp build/disk.img iso_root/boot/disk.img
 
-          # 1. Build fast VirtualBox BIOS+UEFI Bootable ISO (~40 MB)
+          # Sort critical boot files into the first ~24 MB of the ISO so BIOS/VirtualBox reads them immediately
+          cat > sort_order.txt <<'EOF'
+          iso_root/boot/limine/limine-bios-cd.bin 1000
+          iso_root/boot/limine/limine-uefi-cd.bin 990
+          iso_root/boot/limine/limine-bios.sys 980
+          iso_root/boot/limine-bios.sys 970
+          iso_root/boot/limine/limine.conf 960
+          iso_root/boot/limine.conf 950
+          iso_root/limine.conf 940
+          iso_root/boot/fluxos.elf 930
+          iso_root/boot/disk.img 920
+          iso_root/EFI/BOOT/BOOTX64.EFI 910
+          iso_root/EFI/BOOT/BOOTIA32.EFI 900
+          EOF
+
+          # 1. Build fast VirtualBox BIOS+UEFI Bootable ISO (~21 MB)
           xorriso -as mkisofs \
             -R -r -J -joliet-long \
+            -sort sort_order.txt \
             -V "FLUXOS_0_4_X86_64" \
             -b boot/limine/limine-bios-cd.bin \
             -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -71,6 +87,7 @@ jobs:
 
           xorriso -as mkisofs \
             -R -r -J -joliet-long \
+            -sort sort_order.txt \
             -V "FLUXOS_0_4_X86_64" \
             -b boot/limine/limine-bios-cd.bin \
             -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -97,9 +114,13 @@ jobs:
           name: "FluxOS 0.4 x86_64 Workstation Edition (BIOS + UEFI VirtualBox Ready ISO)"
           body: |
             ### FluxOS 0.4 x86_64 Workstation Edition — Hybrid Legacy BIOS + UEFI Bootable ISO
-            - **Works out-of-the-box in VirtualBox (both Legacy BIOS & EFI modes), VMware, QEMU, and USB!**
-            - **`FluxOS-0.4-x86_64.iso` (~1.96 GB)**: Full DVD ISO with LiveOS squashfs + offline NVIDIA 570.12, Proton 9.0, Chrome, Steam, Epic Games, VS Code packages.
-            - **`FluxOS-0.4-x86_64-VirtualBox.iso` (~19 MB)**: Instant-download BIOS+UEFI bootable ISO for VirtualBox / QEMU.
+            - **Fixed VirtualBox & Real-Hardware Bugs**:
+              - Fixed RAMDisk `ext2` rootfs mount on Legacy PIIX3/PIIX4 IDE controllers (and empty `.vdi` disks).
+              - Sorted `/boot/limine/*`, `/boot/fluxos.elf`, and `/boot/disk.img` into the first 24 MB of the ISO.
+              - Added VirtualBox (`0x4004`) + Bochs (`0xB004`) + QEMU (`0x604`) ACPI PowerOff support.
+              - Fixed UI label bounds in Flux Software Center & System Settings + Night Light screen filter.
+            - **`FluxOS-0.4-x86_64.iso` (~1.94 GB)**: Full DVD ISO with LiveOS squashfs + offline NVIDIA 570.12, Proton 9.0, Chrome, Steam, Epic Games, VS Code packages.
+            - **`FluxOS-0.4-x86_64-VirtualBox.iso` (~21 MB)**: Instant-download BIOS+UEFI bootable ISO for VirtualBox / QEMU.
           files: |
             FluxOS-0.4-x86_64.iso
             FluxOS-0.4-x86_64-VirtualBox.iso
