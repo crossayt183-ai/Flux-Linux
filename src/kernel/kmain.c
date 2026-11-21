@@ -47,6 +47,13 @@
 #include "net_routing_xdp.h"
 #include "ipc_futex_dbus.h"
 #include "kvm_lsm_apparmor.h"
+#include "zfs_f2fs_erofs.h"
+#include "smb3_nfs4_fuse.h"
+#include "iommu_apic_pmu.h"
+#include "avx_fpu_microcode.h"
+#include "vulkan_radv_nvk.h"
+#include "kms_atomic_color.h"
+#include "wayland_protocols_dmabuf.h"
 #include "fb.h"
 #include "wm.h"
 
@@ -335,6 +342,15 @@ static void supervisor_task(void *arg UNUSED) {
     }
     kprintf("[SELFTEST] Stage 13 Kernel (Monitor DP2.1/HDR/180Hz + EEVDF/LAVD + MGLRU/THP + XFS/io_uring + XDP + Futex2 + KVM/AppArmor) OK!\n");
 
+    /* 3h. Stage 14 Extended FS (OpenZFS/F2FS/EROFS + SMB3/NFSv4.2/FUSE3), Arch (VT-d IOMMU/x2APIC/PMU + Microcode/AVX) & Graphics (Vulkan 1.4/RT + KMS Atomic Color + Wayland DMA-BUF) */
+    if (!zfs_f2fs_erofs_selftest() || !smb3_nfs4_fuse_selftest() ||
+        !iommu_apic_pmu_selftest() || !avx_fpu_microcode_selftest() ||
+        !vulkan_radv_nvk_selftest() || !kms_atomic_color_selftest() ||
+        !wayland_protocols_dmabuf_selftest()) {
+        kpanic("Stage 14 FS/Arch/Gfx self-test failed");
+    }
+    kprintf("[SELFTEST] Stage 14 (OpenZFS/F2FS/SMB3/NFS4/FUSE3 + VT-d IOMMU/x2APIC/PMU/AVX + Vulkan 1.4/KMS Color/DMA-BUF) OK!\n");
+
     /* 4. Stage 3 Graphics Compositor & PS/2 interactive desktop */
     if (fb_is_ready()) {
         wm_init();
@@ -407,6 +423,13 @@ void kmain(void) {
     net_routing_xdp_init();
     ipc_futex_dbus_init();
     kvm_lsm_apparmor_init();
+    zfs_f2fs_erofs_init();
+    smb3_nfs4_fuse_init();
+    iommu_apic_pmu_init();
+    avx_fpu_microcode_init();
+    vulkan_radv_nvk_init();
+    kms_atomic_color_init();
+    wayland_protocols_dmabuf_init();
     wayland_init();
     timer_init(100);
     synth_init();
