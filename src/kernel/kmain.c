@@ -34,6 +34,12 @@
 #include "smp_acpi.h"
 #include "pkg_git.h"
 #include "screenshot_vaapi.h"
+#include "edac_mce.h"
+#include "watchdog_kdump.h"
+#include "pcie_quirks.h"
+#include "fs_journal_fsck.h"
+#include "net_resilience.h"
+#include "abi_sanitizer.h"
 #include "fb.h"
 #include "wm.h"
 
@@ -307,6 +313,13 @@ static void supervisor_task(void *arg UNUSED) {
     }
     kprintf("[SELFTEST] Stage 10+11 Btrfs + Proton/DXVK + SMP(i7-2600K) + DNF5/Git + VA-API/Screenshot OK!\n");
 
+    /* 3f. Stage 12 Enterprise Stability: EDAC/MCE + Watchdog/Kdump + PCIe Quirks + FSCK/JBD2 + BBRv3 + ABI Sanitizer */
+    if (!edac_mce_selftest() || !watchdog_kdump_selftest() || !pcie_quirks_selftest() ||
+        !fs_journal_fsck_selftest() || !net_resilience_selftest() || !abi_sanitizer_selftest()) {
+        kpanic("Stage 12 Enterprise Stability & Self-Healing self-test failed");
+    }
+    kprintf("[SELFTEST] Stage 12 Stability (EDAC/MCE + iTCO_wdt + P67A-UD5-B3 Quirks + JBD2/FSCK + BBRv3 + KASAN/ABI) OK!\n");
+
     /* 4. Stage 3 Graphics Compositor & PS/2 interactive desktop */
     if (fb_is_ready()) {
         wm_init();
@@ -366,6 +379,12 @@ void kmain(void) {
     smp_acpi_init();
     pkg_git_init();
     screenshot_vaapi_init();
+    edac_mce_init();
+    watchdog_kdump_init();
+    pcie_quirks_init();
+    fs_journal_fsck_init();
+    net_resilience_init();
+    abi_sanitizer_init();
     wayland_init();
     timer_init(100);
     synth_init();
