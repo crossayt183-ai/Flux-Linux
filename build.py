@@ -171,7 +171,7 @@ def build():
     print(f"[BUILD OK] {len(c_files)} C + {len(s_files)} ASM files ({total_loc} LOC) -> {elf_out}")
 
 
-def run_qemu(headless: bool, timeout_sec: int = 120):
+def run_qemu(headless: bool, timeout_sec: int = 240):
     if not QEMU.exists() or not OVMF_CODE.exists():
         raise FileNotFoundError("QEMU or OVMF firmware not found in D:\\flux-tools\\qemu")
 

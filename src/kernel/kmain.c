@@ -40,6 +40,13 @@
 #include "fs_journal_fsck.h"
 #include "net_resilience.h"
 #include "abi_sanitizer.h"
+#include "display_hdr_vrr.h"
+#include "sched_eevdf.h"
+#include "mm_folios_thp.h"
+#include "xfs_vfs_cache.h"
+#include "net_routing_xdp.h"
+#include "ipc_futex_dbus.h"
+#include "kvm_lsm_apparmor.h"
 #include "fb.h"
 #include "wm.h"
 
@@ -320,6 +327,14 @@ static void supervisor_task(void *arg UNUSED) {
     }
     kprintf("[SELFTEST] Stage 12 Stability (EDAC/MCE + iTCO_wdt + P67A-UD5-B3 Quirks + JBD2/FSCK + BBRv3 + KASAN/ABI) OK!\n");
 
+    /* 3g. Stage 13 Core Architecture: Monitor DP2.1/HDR/VRR + EEVDF/LAVD + MGLRU/THP/Folios + XFS/io_uring + XDP/Routing + Futex2/kdbus + KVM/LSM */
+    if (!display_hdr_vrr_selftest() || !sched_eevdf_selftest() || !mm_folios_thp_selftest() ||
+        !xfs_vfs_cache_selftest() || !net_routing_xdp_selftest() || !ipc_futex_dbus_selftest() ||
+        !kvm_lsm_apparmor_selftest()) {
+        kpanic("Stage 13 Core Kernel Subsystems self-test failed");
+    }
+    kprintf("[SELFTEST] Stage 13 Kernel (Monitor DP2.1/HDR/180Hz + EEVDF/LAVD + MGLRU/THP + XFS/io_uring + XDP + Futex2 + KVM/AppArmor) OK!\n");
+
     /* 4. Stage 3 Graphics Compositor & PS/2 interactive desktop */
     if (fb_is_ready()) {
         wm_init();
@@ -385,6 +400,13 @@ void kmain(void) {
     fs_journal_fsck_init();
     net_resilience_init();
     abi_sanitizer_init();
+    display_hdr_vrr_init();
+    sched_eevdf_init();
+    mm_folios_thp_init();
+    xfs_vfs_cache_init();
+    net_routing_xdp_init();
+    ipc_futex_dbus_init();
+    kvm_lsm_apparmor_init();
     wayland_init();
     timer_init(100);
     synth_init();
