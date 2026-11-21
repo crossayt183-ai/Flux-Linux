@@ -54,6 +54,11 @@
 #include "vulkan_radv_nvk.h"
 #include "kms_atomic_color.h"
 #include "wayland_protocols_dmabuf.h"
+#include "seccomp_ebpf_lsm.h"
+#include "tpm2_ima_evm.h"
+#include "kcfi_shadow_stack.h"
+#include "nftables_ids_dpi.h"
+#include "post_quantum_keyring.h"
 #include "fb.h"
 #include "wm.h"
 
@@ -351,6 +356,14 @@ static void supervisor_task(void *arg UNUSED) {
     }
     kprintf("[SELFTEST] Stage 14 (OpenZFS/F2FS/SMB3/NFS4/FUSE3 + VT-d IOMMU/x2APIC/PMU/AVX + Vulkan 1.4/KMS Color/DMA-BUF) OK!\n");
 
+    /* 3i. Stage 15 Defense-in-Depth Security (+52k LOC): Seccomp/eBPF KRSI + TPM 2.0/IMA/EVM + kCFI/CET Shadow Stack + nftables/IDS/DPI + Post-Quantum ML-KEM/ML-DSA Keyring */
+    if (!seccomp_ebpf_lsm_selftest() || !tpm2_ima_evm_selftest() ||
+        !kcfi_shadow_stack_selftest() || !nftables_ids_dpi_selftest() ||
+        !post_quantum_keyring_selftest()) {
+        kpanic("Stage 15 Security self-test failed");
+    }
+    kprintf("[SELFTEST] Stage 15 Security (Seccomp/KRSI + TPM2/IMA/EVM + kCFI/CET ShadowStack + nftables/IDS + Post-Quantum Kyber/Dilithium) OK!\n");
+
     /* 4. Stage 3 Graphics Compositor & PS/2 interactive desktop */
     if (fb_is_ready()) {
         wm_init();
@@ -430,6 +443,11 @@ void kmain(void) {
     vulkan_radv_nvk_init();
     kms_atomic_color_init();
     wayland_protocols_dmabuf_init();
+    seccomp_ebpf_lsm_init();
+    tpm2_ima_evm_init();
+    kcfi_shadow_stack_init();
+    nftables_ids_dpi_init();
+    post_quantum_keyring_init();
     wayland_init();
     timer_init(100);
     synth_init();
