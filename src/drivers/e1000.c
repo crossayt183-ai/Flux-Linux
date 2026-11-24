@@ -134,7 +134,8 @@ bool e1000_init(void) {
         return false;
     }
 
-    is_82574 = (dev.device_id == 0x10D3U);
+    is_82574 = (dev.device_id == 0x10D3U || dev.device_id == 0x153AU ||
+                dev.device_id == 0x15B8U || dev.device_id == 0x1502U);
     pci_enable_bus_master(&dev);
 
     bool is_io = false, is_64 = false;

@@ -111,6 +111,7 @@ typedef struct {
 void syscall_init(void);
 void syscall_set_kstack(uint64_t kstack_top);
 cpu_regs_t *syscall_dispatch(cpu_regs_t *regs);
+uint64_t syscall_fast_sysret_count(void);
 
 /* User binary registry for execve & kernel spawning */
 typedef void (*console_sink_fn_t)(const char *buf, size_t len);

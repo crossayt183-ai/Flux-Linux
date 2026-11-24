@@ -1,7 +1,11 @@
 #include "fb.h"
 #include "pmm.h"
+#include "vmm.h"
+#include "cpu.h"
 #include "string.h"
 #include "serial.h"
+
+#define MSR_IA32_PAT 0x00000277U
 
 static struct limine_framebuffer *hw_fb = NULL;
 static uint32_t *front_buf = NULL;
@@ -10,6 +14,29 @@ static int32_t   fb_w = 0;
 static int32_t   fb_h = 0;
 static uint32_t  front_pitch_px = 0;
 static bool      fast_xrgb = true;
+static bool      wc_pat_active = false;
+
+static void fb_enable_write_combining(uintptr_t vram_va, size_t bytes) {
+    /* Program IA32_PAT PA4 (PAT=1, PCD=0, PWT=0 -> bit 32..34) as Write-Combining (0x01) */
+    uint64_t pat = rdmsr(MSR_IA32_PAT);
+    pat &= ~(0xFFULL << 32);
+    pat |=  (0x01ULL << 32); /* WC = 0x01 in slot PA4 */
+    wrmsr(MSR_IA32_PAT, pat);
+
+    /* Tag existing 4KB PTEs (if not 2MB hugepage) with PAT bit (bit 7 on 4K PTE) */
+    vm_space_t *ksp = vmm_kernel_space();
+    uint64_t start = ALIGN_DOWN((uint64_t)vram_va, PAGE_SIZE);
+    uint64_t end   = ALIGN_UP((uint64_t)vram_va + bytes, PAGE_SIZE);
+    for (uint64_t va = start; va < end; va += PAGE_SIZE) {
+        uint64_t pte = 0;
+        if (vmm_get_pte(ksp, va, &pte)) {
+            uint64_t phys  = pte & PTE_ADDR_MASK;
+            uint64_t flags = (pte & ~PTE_ADDR_MASK & ~(PTE_WT | PTE_CD)) | (1ULL << 7);
+            vmm_map_page(ksp, va, phys, flags);
+        }
+    }
+    wc_pat_active = true;
+}
 
 static inline uint32_t to_hw_color(uint32_t rgb) {
     if (fast_xrgb || !hw_fb) return rgb & 0x00FFFFFFU;
@@ -40,9 +67,10 @@ bool fb_init(struct limine_framebuffer *fb) {
     }
     back_buf = (uint32_t *)phys_to_virt(bb_phys);
     memset(back_buf, 0, bb_pages * PAGE_SIZE);
+    fb_enable_write_combining((uintptr_t)front_buf, (size_t)fb->pitch * (size_t)fb_h);
 
-    kprintf("[FB] Double-buffered %dx%d 32bpp ready (%lu KB backbuffer)\n",
-            fb_w, fb_h, (bb_pages * PAGE_SIZE) / 1024);
+    kprintf("[FB] Double-buffered %dx%d 32bpp ready (%lu KB backbuffer, IA32_PAT WC + ERMS=%s)\n",
+            fb_w, fb_h, (bb_pages * PAGE_SIZE) / 1024, wc_pat_active ? "ON" : "OFF");
     return true;
 }
 
@@ -89,10 +117,20 @@ void fb_fill_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t rgb) {
     if (x0 >= x1 || y0 >= y1) return;
 
     uint32_t c = to_hw_color(rgb);
+    uint64_t c64 = ((uint64_t)c << 32) | (uint64_t)c;
+    int32_t span = x1 - x0;
     for (int32_t py = y0; py < y1; py++) {
         uint32_t *row = &back_buf[py * fb_w + x0];
-        for (int32_t px = 0; px < (x1 - x0); px++) {
-            row[px] = c;
+        size_t qwords = (size_t)span >> 1;
+        if (qwords > 0) {
+            void *rdi = row;
+            __asm__ volatile ("cld; rep stosq"
+                              : "+D"(rdi), "+c"(qwords)
+                              : "a"(c64)
+                              : "memory");
+        }
+        if (span & 1) {
+            row[span - 1] = c;
         }
     }
 }
@@ -203,11 +241,12 @@ void fb_blit_screen(const uint32_t *src_xrgb) {
     if (!back_buf || !src_xrgb || fb_w <= 0 || fb_h <= 0) return;
     if (fast_xrgb) {
         size_t qwords = ((size_t)fb_w * (size_t)fb_h) / 2;
-        const uint64_t *s64 = (const uint64_t *)src_xrgb;
-        uint64_t *d64 = (uint64_t *)back_buf;
-        for (size_t i = 0; i < qwords; i++) {
-            d64[i] = s64[i];
-        }
+        const void *rsi = src_xrgb;
+        void *rdi = back_buf;
+        __asm__ volatile ("cld; rep movsq"
+                          : "+D"(rdi), "+S"(rsi), "+c"(qwords)
+                          :
+                          : "memory");
         return;
     }
     size_t total = (size_t)fb_w * (size_t)fb_h;
@@ -270,20 +309,31 @@ void fb_present_rect(int32_t x, int32_t y, int32_t w, int32_t h) {
 
     if (x0 == 0 && x1 == fb_w && front_pitch_px == (uint32_t)fb_w) {
         size_t qwords = ((size_t)(y1 - y0) * (size_t)fb_w) / 2;
-        const uint64_t *src = (const uint64_t *)&back_buf[y0 * fb_w];
-        volatile uint64_t *dst = (volatile uint64_t *)&front_buf[y0 * front_pitch_px];
-        for (size_t i = 0; i < qwords; i++) {
-            dst[i] = src[i];
-        }
+        const void *rsi = &back_buf[y0 * fb_w];
+        void *rdi = &front_buf[y0 * front_pitch_px];
+        __asm__ volatile ("cld; rep movsq; sfence"
+                          : "+D"(rdi), "+S"(rsi), "+c"(qwords)
+                          :
+                          : "memory");
         return;
     }
 
     int32_t span = x1 - x0;
     for (int32_t py = y0; py < y1; py++) {
         const uint32_t *src = &back_buf[py * fb_w + x0];
-        volatile uint32_t *dst = &front_buf[py * front_pitch_px + x0];
-        for (int32_t px = 0; px < span; px++) {
-            dst[px] = src[px];
+        uint32_t *dst = &front_buf[py * front_pitch_px + x0];
+        size_t qwords = (size_t)span >> 1;
+        if (qwords > 0) {
+            const void *rsi = src;
+            void *rdi = dst;
+            __asm__ volatile ("cld; rep movsq"
+                              : "+D"(rdi), "+S"(rsi), "+c"(qwords)
+                              :
+                              : "memory");
+        }
+        if (span & 1) {
+            dst[span - 1] = src[span - 1];
         }
     }
+    __asm__ volatile ("sfence" ::: "memory");
 }

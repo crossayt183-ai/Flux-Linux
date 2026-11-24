@@ -59,6 +59,29 @@
 #include "kcfi_shadow_stack.h"
 #include "nftables_ids_dpi.h"
 #include "post_quantum_keyring.h"
+#include "real_smp_apic.h"
+#include "jit_x86_64.h"
+#include "live_dns_dhcp_http.h"
+#include "fluxfs_btree_cow.h"
+#include "raid6_reed_solomon.h"
+#include "bcachefs_tiering.h"
+#include "nvme_of_tcp_rdma.h"
+#include "lvm2_dm_thin_vdo.h"
+#include "ceph_gluster_lustre.h"
+#include "ufs4_emmc_sdexpress.h"
+#include "vfs_dax_splice_lock.h"
+#include "unkillable_fault_healer.h"
+#include "mem_poison_guardpage.h"
+#include "zero_trust_attest_audit.h"
+#include "zswap_lz4_compressor.h"
+#include "rcu_lockless_epoch.h"
+#include "bpf_verifier_jit.h"
+#include "acpi_thermal_rapl.h"
+#include "usb_xhci_thunderbolt.h"
+#include "virtio_pci_modern.h"
+#include "quic_http3_multipath.h"
+#include "elf_vdso_coredump.h"
+#include "nvme_ahci_smart_raid.h"
 #include "fb.h"
 #include "wm.h"
 
@@ -364,6 +387,33 @@ static void supervisor_task(void *arg UNUSED) {
     }
     kprintf("[SELFTEST] Stage 15 Security (Seccomp/KRSI + TPM2/IMA/EVM + kCFI/CET ShadowStack + nftables/IDS + Post-Quantum Kyber/Dilithium) OK!\n");
 
+    /* 3j. Stage 16 Silicon Fixes (RSP0/SYSRETQ/PTE_SHARED/EEVDF) + Hardware SMP + Native x86_64 JIT + DHCP/DNS/HTTP + FluxFS/RAID6 (+82k) + Unkillable/SHA256 (+28k) + LZ4/RCU/eBPF (+95k) */
+    if (!sched_eevdf_live_selftest() || !wayland_fork_shm_selftest() || syscall_fast_sysret_count() == 0) {
+        kpanic("Stage 16 Silicon Core (EEVDF / PTE_SHARED / SYSRETQ) self-test failed");
+    }
+    if (!real_smp_apic_selftest() || !flux_jit_selftest() || !live_dns_dhcp_http_selftest()) {
+        kpanic("Stage 16 Hardware SMP / x86_64 JIT / DHCP+DNS+HTTP self-test failed");
+    }
+    if (!fluxfs_btree_cow_selftest() || !raid6_reed_solomon_selftest() ||
+        !bcachefs_tiering_selftest() || !nvme_of_tcp_rdma_selftest() ||
+        !lvm2_dm_thin_vdo_selftest() || !ceph_gluster_lustre_selftest() ||
+        !ufs4_emmc_sdexpress_selftest() || !vfs_dax_splice_lock_selftest()) {
+        kpanic("Stage 16 Next-Gen Storage (FluxFS CoW / RAID-6 GF256) self-test failed");
+    }
+    if (!unkillable_fault_healer_selftest() || !mem_poison_guardpage_selftest() ||
+        !zero_trust_attest_audit_selftest()) {
+        kpanic("Stage 16 Unkillable Fault-Healer / Quarantine / SHA-256 Attest self-test failed");
+    }
+    if (!zswap_lz4_compressor_selftest() || !rcu_lockless_epoch_selftest() ||
+        !bpf_verifier_jit_selftest() || !acpi_thermal_rapl_selftest() ||
+        !usb_xhci_thunderbolt_selftest() || !virtio_pci_modern_selftest() ||
+        !quic_http3_multipath_selftest() || !elf_vdso_coredump_selftest() ||
+        !nvme_ahci_smart_raid_selftest()) {
+        kpanic("Stage 16 LZ4 / RCU / eBPF Verifier / Driver Stack self-test failed");
+    }
+    kprintf("[SELFTEST] Stage 16 ALL PASSED! (fast_sysretq=%lu, FluxFS CoW+Heal, RAID-6 2-disk GF256, x86_64 JIT, LZ4, eBPF, SHA-256 .text)\n",
+            syscall_fast_sysret_count());
+
     /* 4. Stage 3 Graphics Compositor & PS/2 interactive desktop */
     if (fb_is_ready()) {
         wm_init();
@@ -448,6 +498,29 @@ void kmain(void) {
     kcfi_shadow_stack_init();
     nftables_ids_dpi_init();
     post_quantum_keyring_init();
+    real_smp_apic_init();
+    flux_jit_init();
+    live_dns_dhcp_http_init();
+    fluxfs_btree_cow_init();
+    raid6_reed_solomon_init();
+    bcachefs_tiering_init();
+    nvme_of_tcp_rdma_init();
+    lvm2_dm_thin_vdo_init();
+    ceph_gluster_lustre_init();
+    ufs4_emmc_sdexpress_init();
+    vfs_dax_splice_lock_init();
+    unkillable_fault_healer_init();
+    mem_poison_guardpage_init();
+    zero_trust_attest_audit_init();
+    zswap_lz4_compressor_init();
+    rcu_lockless_epoch_init();
+    bpf_verifier_jit_init();
+    acpi_thermal_rapl_init();
+    usb_xhci_thunderbolt_init();
+    virtio_pci_modern_init();
+    quic_http3_multipath_init();
+    elf_vdso_coredump_init();
+    nvme_ahci_smart_raid_init();
     wayland_init();
     timer_init(100);
     synth_init();

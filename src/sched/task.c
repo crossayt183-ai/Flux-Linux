@@ -26,8 +26,12 @@ static task_t   *current_task   = NULL;
 static task_t   *idle_task      = NULL;
 static uint64_t  next_pid       = 1;
 static uint64_t  ctx_switches   = 0;
+static uint64_t  eevdf_picks    = 0;
+static uint64_t  g_min_vruntime = 0;
 static spinlock_t sched_lock    = SPINLOCK_INIT;
 static volatile bool sched_started = false;
+
+static const uint32_t eevdf_prio_weight[4] = { 256U, 512U, 1024U, 2048U };
 
 static void init_default_fds(task_t *t) {
     memset(t->fds, 0, sizeof(t->fds));
@@ -51,6 +55,10 @@ static task_t *alloc_task_struct(const char *name, uint8_t priority, vm_space_t 
     strncpy(t->name, name ? name : "task", sizeof(t->name) - 1);
     t->priority     = (priority > MAX_PRIO) ? MAX_PRIO : priority;
     t->quantum_left = (uint32_t)(t->priority + 1) * 2U;
+    t->weight       = eevdf_prio_weight[t->priority];
+    t->slice_ns     = 4000000ULL;
+    t->vruntime_ns  = g_min_vruntime;
+    t->vdeadline_ns = t->vruntime_ns + (t->slice_ns * 1024ULL) / t->weight;
     t->state        = TASK_READY;
     t->is_user      = is_user;
     t->kstack_base   = ks;
@@ -75,33 +83,72 @@ static void enqueue_task(task_t *t) {
 static task_t *pick_next_locked(void) {
     uint64_t now = timer_uptime_ms();
 
-    /* Wake expired sleepers */
+    /* Wake expired sleepers with EEVDF wakeup lag credit */
     for (task_t *t = task_list_head; t; t = t->next) {
         if (t->state == TASK_SLEEPING && now >= t->sleep_until_ms) {
             t->state = TASK_READY;
+            uint64_t floor_vr = (g_min_vruntime > 2000000ULL) ? (g_min_vruntime - 2000000ULL) : 0;
+            if (t->vruntime_ns < floor_vr) t->vruntime_ns = floor_vr;
+            uint32_t w = t->weight ? t->weight : 1024U;
+            t->vdeadline_ns = t->vruntime_ns + ((t->slice_ns ? t->slice_ns : 4000000ULL) * 1024ULL) / w;
         }
     }
 
-    /* Priority-aware Round-Robin: scan priority 3 -> 0 starting after current */
+    /* Real EEVDF selection within priority tiers:
+     * 1) Compute mean virtual runtime across runnable tasks in the tier (lag >= 0 => vruntime <= avg_vr).
+     * 2) Select the eligible task with the earliest virtual deadline (minimum vdeadline_ns). */
     task_t *best = NULL;
     for (int prio = MAX_PRIO; prio >= 0; prio--) {
-        task_t *start = (current_task && current_task->next) ? current_task->next : task_list_head;
-        task_t *cur = start;
-        bool wrapped = false;
-        while (cur) {
-            if (cur != idle_task && cur->priority == (uint8_t)prio &&
-                (cur->state == TASK_READY || cur->state == TASK_RUNNING)) {
-                best = cur;
-                break;
+        uint64_t sum_vr = 0;
+        uint64_t min_vr = ~0ULL;
+        uint32_t cnt    = 0;
+
+        for (task_t *t = task_list_head; t; t = t->next) {
+            if (t != idle_task && t->priority == (uint8_t)prio &&
+                (t->state == TASK_READY || t->state == TASK_RUNNING)) {
+                sum_vr += t->vruntime_ns;
+                if (t->vruntime_ns < min_vr) min_vr = t->vruntime_ns;
+                cnt++;
             }
-            cur = cur->next;
-            if (!cur && !wrapped) {
-                cur = task_list_head;
-                wrapped = true;
-            }
-            if (wrapped && cur == start) break;
         }
-        if (best) break;
+        if (cnt == 0) continue;
+
+        if (min_vr != ~0ULL && min_vr > g_min_vruntime) {
+            g_min_vruntime = min_vr;
+        }
+        uint64_t avg_vr = sum_vr / cnt;
+
+        uint64_t best_vd = ~0ULL;
+        for (task_t *t = task_list_head; t; t = t->next) {
+            if (t != idle_task && t->priority == (uint8_t)prio &&
+                (t->state == TASK_READY || t->state == TASK_RUNNING)) {
+                /* Eligible iff lag >= 0 (vruntime_ns <= avg_vr) */
+                if (t->vruntime_ns <= avg_vr) {
+                    bool prefer = (t->vdeadline_ns < best_vd) ||
+                                  (t->vdeadline_ns == best_vd && best == current_task && t != current_task);
+                    if (!best || prefer) {
+                        best    = t;
+                        best_vd = t->vdeadline_ns;
+                    }
+                }
+            }
+        }
+        /* Fallback if rounding left all > avg_vr */
+        if (!best) {
+            for (task_t *t = task_list_head; t; t = t->next) {
+                if (t != idle_task && t->priority == (uint8_t)prio &&
+                    (t->state == TASK_READY || t->state == TASK_RUNNING)) {
+                    if (!best || t->vdeadline_ns < best_vd) {
+                        best    = t;
+                        best_vd = t->vdeadline_ns;
+                    }
+                }
+            }
+        }
+        if (best) {
+            eevdf_picks++;
+            break;
+        }
     }
 
     return best ? best : idle_task;
@@ -131,8 +178,10 @@ static void schedule_core(void) {
     ctx_switches++;
 
     __asm__ volatile ("fxsave %0" : "=m"(prev->fpu_state));
-    tss_set_rsp0(next->kstack_top);
-    syscall_set_kstack(next->kstack_top);
+    if (next->kstack_top != 0) {
+        tss_set_rsp0(next->kstack_top);
+        syscall_set_kstack(next->kstack_top);
+    }
     vmm_switch_space(next->vm);
     context_switch(&prev->rsp, next->rsp);
     __asm__ volatile ("fxrstor %0" :: "m"(current_task->fpu_state));
@@ -143,6 +192,12 @@ static void schedule_core(void) {
 static void on_timer_tick(void) {
     if (!sched_started || !current_task) return;
     current_task->total_ticks++;
+    uint32_t w = current_task->weight ? current_task->weight : 1024U;
+    uint64_t sl = current_task->slice_ns ? current_task->slice_ns : 4000000ULL;
+    current_task->vruntime_ns += (10000000ULL * 1024ULL) / w;
+    if (current_task->vruntime_ns >= current_task->vdeadline_ns) {
+        current_task->vdeadline_ns = current_task->vruntime_ns + (sl * 1024ULL) / w;
+    }
     if (current_task->quantum_left > 0) {
         current_task->quantum_left--;
     }
@@ -152,24 +207,37 @@ static void on_timer_tick(void) {
 }
 
 void sched_init(void) {
-    /* Wrap boot execution context as idle/boot task (pid 0) */
+    /* Wrap boot execution context as idle/boot task (pid 0) with valid Ring-0 stack */
     idle_task = (task_t *)kcalloc(1, sizeof(task_t));
-    idle_task->pid      = 0;
+    uint64_t idle_ks = (uint64_t)(uintptr_t)kmalloc(TASK_KSTACK_SIZE);
+    idle_task->pid           = 0;
     strcpy(idle_task->name, "kernel-idle");
-    idle_task->state    = TASK_RUNNING;
-    idle_task->priority = 0;
-    idle_task->quantum_left = 2;
-    idle_task->vm       = vmm_kernel_space();
+    idle_task->state         = TASK_RUNNING;
+    idle_task->priority      = 0;
+    idle_task->quantum_left  = 2;
+    idle_task->weight        = 256U;
+    idle_task->slice_ns      = 4000000ULL;
+    idle_task->vdeadline_ns  = 16000000ULL;
+    idle_task->kstack_base   = idle_ks;
+    idle_task->kstack_top    = idle_ks ? (idle_ks + TASK_KSTACK_SIZE) : 0;
+    idle_task->vm            = vmm_kernel_space();
     idle_task->sandbox_perms = 0xFFFFFFFFU;
     strcpy(idle_task->sec_ctx, "system_u:system_r:kernel_t:s0");
+    *(uint16_t *)(idle_task->fpu_state + 0)  = 0x037FU;
+    *(uint32_t *)(idle_task->fpu_state + 24) = 0x1F80U;
     init_default_fds(idle_task);
+
+    if (idle_task->kstack_top != 0) {
+        tss_set_rsp0(idle_task->kstack_top);
+    }
 
     task_list_head = idle_task;
     current_task   = idle_task;
     sched_started  = true;
 
     timer_set_tick_hook(on_timer_tick);
-    kprintf("[SCHED] Preemptive priority Round-Robin scheduler initialized\n");
+    kprintf("[SCHED] Preemptive live EEVDF deadline scheduler online (idle RSP0=0x%lx)\n",
+            idle_task->kstack_top);
 }
 
 task_t *task_current(void) {
@@ -424,4 +492,8 @@ size_t sched_list_tasks(task_t **out_ptrs, size_t max_count) {
 
 uint64_t sched_context_switches(void) {
     return ctx_switches;
+}
+
+bool sched_eevdf_live_selftest(void) {
+    return idle_task != NULL && idle_task->kstack_top != 0 && eevdf_picks > 0;
 }

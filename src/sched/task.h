@@ -73,6 +73,12 @@ typedef struct task {
     fd_entry_t   fds[MAX_FDS];
     uint64_t     total_ticks;
 
+    /* Real EEVDF (Earliest Eligible Virtual Deadline First) runtime state */
+    uint64_t     vruntime_ns;
+    uint64_t     vdeadline_ns;
+    uint64_t     slice_ns;
+    uint32_t     weight;
+
     /* SELinux MAC context & Flatpak sandbox state */
     char         sec_ctx[40];
     uint32_t     sandbox_perms;
@@ -101,6 +107,7 @@ void    task_wake(task_t *t);
 
 size_t  sched_list_tasks(task_t **out_ptrs, size_t max_count);
 uint64_t sched_context_switches(void);
+bool    sched_eevdf_live_selftest(void);
 
 /* Assembly helpers */
 extern void context_switch(uint64_t *old_rsp, uint64_t new_rsp);

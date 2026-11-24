@@ -103,14 +103,14 @@ int wl_surface_create_for_task(task_t *t, const char *title, int w, int h, uint6
 
     uint64_t uva_base = 0x0000003000000000ULL + (uint64_t)slot * 0x100000ULL;
     vmm_add_vma(t->vm, uva_base, uva_base + (uint64_t)pages * PAGE_SIZE,
-                VMA_READ | VMA_WRITE | VMA_USER, VMA_ANON);
+                VMA_READ | VMA_WRITE | VMA_USER | VMA_SHARED, VMA_ANON);
 
     for (size_t p = 0; p < pages; p++) {
         uint64_t existing = 0;
         uint64_t va = uva_base + (uint64_t)p * PAGE_SIZE;
         if (!vmm_get_pte(t->vm, va, &existing)) {
             if (!vmm_map_page(t->vm, va, s->phys_pages[p],
-                              PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_NX)) {
+                              PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_SHARED | PTE_NX)) {
                 spin_unlock_irqrestore(&wl_lock);
                 return -1;
             }
@@ -185,4 +185,48 @@ bool wayland_blit_latest(int32_t dst_x, int32_t dst_y, int32_t max_w, int32_t ma
     }
     spin_unlock_irqrestore(&wl_lock);
     return true;
+}
+
+bool wayland_fork_shm_selftest(void) {
+    vm_space_t *parent = vmm_create_space();
+    if (!parent) return false;
+
+    uint64_t shm_phys = pmm_alloc_page();
+    if (!shm_phys) {
+        vmm_destroy_space(parent);
+        return false;
+    }
+
+    const uint64_t test_va = 0x0000003000F00000ULL;
+    vmm_add_vma(parent, test_va, test_va + PAGE_SIZE,
+                VMA_READ | VMA_WRITE | VMA_USER | VMA_SHARED, VMA_ANON);
+    if (!vmm_map_page(parent, test_va, shm_phys,
+                      PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_SHARED | PTE_NX)) {
+        pmm_free_page(shm_phys);
+        vmm_destroy_space(parent);
+        return false;
+    }
+    pmm_ref_inc(shm_phys);
+
+    vm_space_t *child = vmm_clone_cow(parent);
+    if (!child) {
+        pmm_free_page(shm_phys);
+        vmm_destroy_space(parent);
+        return false;
+    }
+
+    uint64_t p_pte = 0, c_pte = 0;
+    bool ok = vmm_get_pte(parent, test_va, &p_pte) &&
+              vmm_get_pte(child, test_va, &c_pte) &&
+              ((p_pte & PTE_WRITE) != 0) &&
+              ((c_pte & PTE_WRITE) != 0) &&
+              ((p_pte & PTE_COW) == 0) &&
+              ((c_pte & PTE_COW) == 0) &&
+              ((p_pte & PTE_ADDR_MASK) == shm_phys) &&
+              ((c_pte & PTE_ADDR_MASK) == shm_phys);
+
+    vmm_destroy_space(child);
+    vmm_destroy_space(parent);
+    pmm_free_page(shm_phys);
+    return ok;
 }

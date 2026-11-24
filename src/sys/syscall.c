@@ -26,6 +26,11 @@
 #define USER_MMAP_LIMIT    0x0000006000000000ULL
 
 extern void syscall_fast_entry(void);
+volatile uint64_t g_fast_sysret_count = 0;
+
+uint64_t syscall_fast_sysret_count(void) {
+    return g_fast_sysret_count;
+}
 
 /* Referenced by syscall_entry.S via GS:[0] and GS:[8] after swapgs */
 typedef struct PACKED {

@@ -16,6 +16,7 @@
 /* Custom OS bits [9..11] */
 #define PTE_COW      (1ULL << 9)
 #define PTE_LAZY     (1ULL << 10)
+#define PTE_SHARED   (1ULL << 11)
 #define PTE_NX       (1ULL << 63)
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
@@ -32,10 +33,11 @@ typedef enum {
     VMA_MMIO
 } vma_type_t;
 
-#define VMA_READ  (1U << 0)
-#define VMA_WRITE (1U << 1)
-#define VMA_EXEC  (1U << 2)
-#define VMA_USER  (1U << 3)
+#define VMA_READ   (1U << 0)
+#define VMA_WRITE  (1U << 1)
+#define VMA_EXEC   (1U << 2)
+#define VMA_USER   (1U << 3)
+#define VMA_SHARED (1U << 4)
 
 typedef struct vma_region {
     uint64_t start;

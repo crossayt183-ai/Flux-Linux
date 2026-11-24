@@ -16,5 +16,6 @@ void wayland_stats(uint32_t *surfaces_out, uint32_t *commits_out);
 bool wayland_blit_latest(int32_t dst_x, int32_t dst_y, int32_t max_w, int32_t max_h,
                          char *title_out, size_t title_cap, uint32_t *commits_out,
                          int *surf_w_out, int *surf_h_out);
+bool wayland_fork_shm_selftest(void);
 
 #endif

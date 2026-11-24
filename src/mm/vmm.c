@@ -178,7 +178,7 @@ static bool clone_pt(uint64_t src_pt_phys, uint64_t dst_pt_phys, uint64_t va_bas
         uint64_t pte = src[i];
         if (!(pte & PTE_PRESENT)) continue;
         uint64_t phys = pte & PTE_ADDR_MASK;
-        if (pte & PTE_WRITE) {
+        if ((pte & PTE_WRITE) && !(pte & PTE_SHARED)) {
             pte = (pte & ~PTE_WRITE) | PTE_COW;
             src[i] = pte;
             if (is_active) invlpg(va_base + (i << 12));
@@ -369,8 +369,9 @@ bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t err_code, bool from_use
     vm_space_t *sp = vmm_current_space();
     uint64_t page_va = ALIGN_DOWN(fault_addr, PAGE_SIZE);
 
-    /* Case 1: Copy-on-Write on present writable-by-COW page */
+    /* Case 1: Copy-on-Write on present writable-by-COW page (atomic under IRQ lock) */
     if (present && write) {
+        uint64_t rf = irq_save_disable();
         uint64_t *pte_ptr = vmm_walk(sp, page_va, false, 0);
         if (pte_ptr && (*pte_ptr & PTE_PRESENT) && (*pte_ptr & PTE_COW)) {
             uint64_t old_phys = *pte_ptr & PTE_ADDR_MASK;
@@ -380,15 +381,20 @@ bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t err_code, bool from_use
                 *pte_ptr = old_phys | new_flags;
             } else {
                 uint64_t new_phys = pmm_alloc_page();
-                if (!new_phys) return false;
+                if (!new_phys) {
+                    irq_restore(rf);
+                    return false;
+                }
                 memcpy(phys_to_virt(new_phys), phys_to_virt(old_phys), PAGE_SIZE);
                 *pte_ptr = new_phys | new_flags;
                 pmm_free_page(old_phys);
             }
             invlpg(page_va);
             sp->cow_faults++;
+            irq_restore(rf);
             return true;
         }
+        irq_restore(rf);
         return false;
     }
 
